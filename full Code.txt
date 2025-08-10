@@ -1,0 +1,221 @@
+#define BLYNK_TEMPLATE_ID "TMPL2YHEdeJXV"
+#define BLYNK_TEMPLATE_NAME "ENERGY METER SYSTEM"
+#define BLYNK_AUTH_TOKEN "wz_rTqvD6T1SqErVRd-W33pLPwSqhrXk"
+
+#include <Wire.h>
+#include <U8g2lib.h>
+#include <Preferences.h>  
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
+#include "ACS712.h"
+#include <ZMPT101B.h>
+
+#define SENSITIVITY 600.0f
+#define COST_PER_KWH 6.5  
+#define RESET_BUTTON_PIN 13  
+
+
+
+char auth[] = BLYNK_AUTH_TOKEN;
+char ssid[] = "Energy";
+char pass[] = "123456789";
+
+Preferences preferences;
+ACS712 sensor(ACS712_05B, 34);
+ZMPT101B voltageSensor(32, 50.0);
+BlynkTimer timer;
+
+// OLED Display (128x128 SH1107)
+U8G2_SH1107_128X128_F_HW_I2C u8g2(U8G2_R3, U8X8_PIN_NONE, 22, 21);
+
+// Energy Tracking Variables
+float total_kWh = 0;
+float total_cost = 0;
+
+#define lamp1 27
+#define lamp2 26
+#define socket1 25
+#define socket2 33
+#define buzzer 15
+#define red 18
+#define green 19
+
+#define VPIN_BUTTON_1    V5
+BLYNK_WRITE(VPIN_BUTTON_1) {
+  int toggleState_1 = param.asInt();
+  if(toggleState_1 == 1){
+digitalWrite(lamp1,LOW);  delay(15);
+  }
+  else { 
+digitalWrite(lamp1,HIGH);  delay(15);
+  }
+}
+#define VPIN_BUTTON_1    V6
+BLYNK_WRITE(VPIN_BUTTON_1) {
+  int toggleState_1 = param.asInt();
+  if(toggleState_1 == 1){
+digitalWrite(lamp2,LOW);  delay(15);
+  }
+  else { 
+digitalWrite(lamp2,HIGH);  delay(15);
+  }
+}
+#define VPIN_BUTTON_1   V7
+BLYNK_WRITE(VPIN_BUTTON_1) {
+  int toggleState_1 = param.asInt();
+  if(toggleState_1 == 1){
+digitalWrite(socket1,LOW);  delay(15);
+  }
+  else { 
+digitalWrite(socket1,HIGH);  delay(15);
+  }
+}
+#define VPIN_BUTTON_1    V8
+BLYNK_WRITE(VPIN_BUTTON_1) {
+  int toggleState_1 = param.asInt();
+  if(toggleState_1 == 1){
+digitalWrite(socket2,LOW);  delay(15);
+  }
+  else { 
+ digitalWrite(socket2,HIGH);  
+  }
+}
+
+void setup() {
+    Serial.begin(115200);
+    sensor.calibrate();  
+    voltageSensor.setSensitivity(SENSITIVITY);
+    pinMode(RESET_BUTTON_PIN, INPUT_PULLUP); 
+    pinMode(lamp1,OUTPUT);
+    pinMode(lamp2,OUTPUT);    
+    pinMode(socket1,OUTPUT);
+    pinMode(socket2,OUTPUT);
+        pinMode(buzzer,OUTPUT);    
+    pinMode(red,OUTPUT);
+    pinMode(green,OUTPUT);
+    // WiFi & Blynk Setup
+    Blynk.begin(auth, ssid, pass);
+    WiFi.begin(ssid, pass);
+    Serial.println("WiFi connected");
+
+    // Load stored values
+    preferences.begin("energy_data", false);
+    total_kWh = preferences.getFloat("total_kWh", 0.0);
+    total_cost = preferences.getFloat("total_cost", 0.0);
+
+    // Initialize OLED
+    u8g2.begin();
+//     u8g2.setDisplayOffset(0);
+  
+    timer.setInterval(1000L, Measure); 
+     digitalWrite(lamp1,HIGH); 
+     digitalWrite(lamp2,HIGH); 
+     digitalWrite(socket1,HIGH); 
+     digitalWrite(socket2,HIGH);  
+     digitalWrite(green,HIGH);  
+     digitalWrite(buzzer,HIGH);  
+     delay(1000);
+    digitalWrite(buzzer,LOW);  
+     delay(1000);
+    digitalWrite(buzzer,HIGH);  
+     delay(1000);
+      digitalWrite(buzzer,LOW);  
+
+}
+
+void loop() {
+    Blynk.run();
+    timer.run();
+    checkResetButton();  
+}
+
+// Measure Power Consumption
+void Measure() {
+    float I= sensor.getCurrentAC()/10;
+    // float I=current-0.06;
+    float voltage=voltageSensor.getRmsVoltage();
+    // float voltage = v-30;
+    float power = I * voltage;       
+    float energy = power / 1000.0;   
+
+    total_kWh += energy * (1.0 / 3600.0);  
+    total_cost = total_kWh * COST_PER_KWH; 
+
+    if(total_kWh>0.03){
+      Blynk.logEvent("lim","Fadlan macamil waxaad gaartay limitkii aad ugu talo gashay inaad isticmaasho.");
+    }
+
+    if(voltage<100){
+       Blynk.logEvent("cut","WARNNG!Korontada weybaxday");
+       I=0.0;
+       power=0;
+       voltage=0;
+
+       digitalWrite(red,LOW);
+    }else{digitalWrite(red,HIGH);}
+
+    // Store updated values
+    preferences.putFloat("total_kWh", total_kWh);
+    preferences.putFloat("total_cost", total_cost);
+
+    // Send data to Blynk
+    Blynk.virtualWrite(V1, I);
+    Blynk.virtualWrite(V0, voltage);
+    Blynk.virtualWrite(V2, power);
+    Blynk.virtualWrite(V3, total_kWh);
+    Blynk.virtualWrite(V4, total_cost);
+
+    // Display on OLED
+    displayOLED(voltage, I, power, total_kWh, total_cost);
+}
+
+// *OLED Display Function*
+void displayOLED(float voltage, float current, float power, float kWh, float cost) {
+    u8g2.clearBuffer();
+    
+   u8g2.setFont(u8g2_font_courB10_tr);  
+  u8g2.drawStr(5, 45, "Energy Meter");  
+
+    u8g2.setFont(u8g2_font_6x13_tr);  
+    char buffer[60];
+
+    snprintf(buffer, sizeof(buffer), "Voltage: %.1f V", voltage);
+    u8g2.drawStr(5, 65, buffer);
+
+    snprintf(buffer, sizeof(buffer), "Current: %.2f A", current);
+    u8g2.drawStr(5, 85, buffer);
+
+    snprintf(buffer, sizeof(buffer), "Power: %.1f W", power);
+    u8g2.drawStr(5, 105, buffer);
+
+    snprintf(buffer, sizeof(buffer), "Energy: %.3f kWh", kWh);
+    u8g2.drawStr(5, 125, buffer);
+
+    snprintf(buffer, sizeof(buffer), "Cost: $%.2f", cost);
+    u8g2.drawStr(5, 15, buffer);
+
+    u8g2.sendBuffer();
+}
+
+// *Check Reset Button*
+void checkResetButton() {
+    if (digitalRead(RESET_BUTTON_PIN) == HIGH) { 
+        Serial.println("Reset button pressed! Clearing data...");
+
+        preferences.putFloat("total_kWh", 0.0);
+        preferences.putFloat("total_cost", 0.0);
+
+        total_kWh = 0;
+        total_cost = 0;
+
+        Blynk.virtualWrite(V3, total_kWh);
+        Blynk.virtualWrite(V4, total_cost);
+
+        Serial.println("Data reset complete!");
+
+        while (digitalRead(RESET_BUTTON_PIN) == LOW) {
+            delay(100);
+        }
+    }
+}
