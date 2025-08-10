@@ -48,7 +48,7 @@ The solution helps users:
 ---
 
 ## 📐 System Architecture  
-```text
+
 [ Current Sensor ] --->  
 [ Voltage Sensor ] ---> [ ESP32 Microcontroller ] ---> OLED Display  
                                                 ---> Blynk App (Mobile)  
@@ -71,7 +71,7 @@ The table below compares the **Proposed IoT-Based Smart Electricity Meter** with
 
 ---
 
-**Key Improvements in the Proposed System:**
+## Key Improvements in the Proposed System: 
 1. **Higher accuracy** (±2%) compared to both manual and existing IoT meters.  
 2. **Integrated alert system** for consumption limits.  
 3. **Remote load control**, allowing users to turn devices ON/OFF from anywhere.  
